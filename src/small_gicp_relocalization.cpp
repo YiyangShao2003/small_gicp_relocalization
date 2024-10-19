@@ -73,11 +73,6 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
 void SmallGicpRelocalizationNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-  if (!msg) {
-    RCLCPP_ERROR(this->get_logger(), "Received null point cloud message.");
-    return;
-  }
-
   last_scan_time_ = msg->header.stamp;
 
   pcl::fromROSMsg(*msg, *registered_scan_);
@@ -98,7 +93,6 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 void SmallGicpRelocalizationNode::performRegistration()
 {
   if (!source_ || !source_tree_) {
-    RCLCPP_WARN(this->get_logger(), "No registered scan available for registration.");
     return;
   }
 
@@ -119,7 +113,6 @@ void SmallGicpRelocalizationNode::performRegistration()
 void SmallGicpRelocalizationNode::publishTransform()
 {
   if (result_T_.isZero()) {
-    RCLCPP_WARN(this->get_logger(), "No valid transformation available.");
     return;
   }
 
