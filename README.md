@@ -41,7 +41,13 @@ cd ..
 
 1. Set prior pointcloud file in [launch file](launch/small_gicp_relocalization_launch.py)
 
-2. Run
+2. Adjust the transformation between `vel_ref_frame` and `lidar_frame`
+
+    The `global_pcd_map` output by algorithms such as `pointlio` and `fastlio` is strictly based on the `lidar_odom` frame. However, the initial position of the robot is typically defined by the `base_link` frame within the `odom` coordinate system. To address this discrepancy, the code listens for the coordinate transformation from `vel_ref_frame`(velocity_reference_frame) to `lidar_frame`, allowing the `global_pcd_map` to be converted into the `odom` coordinate system.
+
+    If not set, empty transformation will be used.
+
+3. Run
 
     ```zsh
     ros2 launch small_gicp_relocalization small_gicp_relocalization_launch.py

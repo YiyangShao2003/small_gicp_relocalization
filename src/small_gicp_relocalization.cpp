@@ -1,7 +1,11 @@
 #include "small_gicp_relocalization/small_gicp_relocalization.hpp"
 
+#include <pcl/common/transforms.h>
+#include <pcl_conversions/pcl_conversions.h>
+
 #include <small_gicp/pcl/pcl_registration.hpp>
 #include <small_gicp/util/downsampling_omp.hpp>
+#include <tf2_eigen/tf2_eigen.hpp>
 
 namespace small_gicp_relocalization
 {
@@ -16,6 +20,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("max_dist_sq", 1.0);
   this->declare_parameter("map_frame_id", "map");
   this->declare_parameter("odom_frame_id", "odom");
+  this->declare_parameter("vel_ref_frame", "");
+  this->declare_parameter("lidar_frame", "");
   this->declare_parameter("prior_pcd_file", "");
 
   this->get_parameter("num_threads", num_threads_);
@@ -25,6 +31,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("max_dist_sq", max_dist_sq_);
   this->get_parameter("map_frame_id", map_frame_id_);
   this->get_parameter("odom_frame_id", odom_frame_id_);
+  this->get_parameter("vel_ref_frame", vel_ref_frame_);
+  this->get_parameter("lidar_frame", lidar_frame_);
   this->get_parameter("prior_pcd_file", prior_pcd_file_);
 
   registered_scan_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
@@ -32,6 +40,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   register_ = std::make_shared<
     small_gicp::Registration<small_gicp::GICPFactor, small_gicp::ParallelReductionOMP>>();
 
+  tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+  tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
   loadGlobalMap(prior_pcd_file_);
@@ -68,6 +78,25 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
     return;
   }
   RCLCPP_INFO(this->get_logger(), "Loaded global map with %zu points", global_map_->points.size());
+
+  // NOTE: Transform global pcd_map (based on `lidar_odom` frame) to the `odom` frame
+  Eigen::Affine3d odom_to_lidar_odom;
+  while (true) {
+    try {
+      auto tf_stamped = tf_buffer_->lookupTransform(
+        vel_ref_frame_, lidar_frame_, this->now(), rclcpp::Duration::from_seconds(1.0));
+      odom_to_lidar_odom = tf2::transformToEigen(tf_stamped.transform);
+      RCLCPP_INFO_STREAM(
+        this->get_logger(), "odom_to_lidar_odom: translation = "
+                              << odom_to_lidar_odom.translation().transpose() << ", rpy = "
+                              << odom_to_lidar_odom.rotation().eulerAngles(0, 1, 2).transpose());
+      break;
+    } catch (tf2::TransformException & ex) {
+      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s. Retrying...", ex.what());
+      rclcpp::sleep_for(std::chrono::seconds(1));
+    }
+  }
+  pcl::transformPointCloud(*global_map_, *global_map_, odom_to_lidar_odom);
 }
 
 void SmallGicpRelocalizationNode::registeredPcdCallback(

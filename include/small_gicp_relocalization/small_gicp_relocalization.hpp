@@ -2,10 +2,9 @@
 #define SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
 
 #include <pcl/io/pcd_io.h>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl_conversions/pcl_conversions.h>
+#include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/transform_listener.h>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -40,6 +39,8 @@ private:
   std::string map_frame_id_;
   std::string odom_frame_id_;
   std::string prior_pcd_file_;
+  std::string vel_ref_frame_;
+  std::string lidar_frame_;
   rclcpp::Time last_scan_time_;
   Eigen::Matrix4f result_T_;
 
@@ -58,6 +59,9 @@ private:
 
   rclcpp::TimerBase::SharedPtr transform_timer_;
   rclcpp::TimerBase::SharedPtr register_timer_;
+
+  std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+  std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
 };
 
 }  // namespace small_gicp_relocalization

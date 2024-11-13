@@ -26,6 +26,8 @@ def generate_launch_description():
                 "max_dist_sq": 1.0,
                 "map_frame_id": "map",
                 "odom_frame_id": "odom",
+                "vel_ref_frame": "",
+                "lidar_frame": "",
                 "prior_pcd_file": "",
             }
         ],
