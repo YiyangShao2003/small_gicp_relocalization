@@ -136,12 +136,12 @@ void SmallGicpRelocalizationNode::performRegistration()
     return;
   }
 
-  result_T_ = result.T_target_source.matrix().cast<float>();
+  result_t_ = result.T_target_source.matrix().cast<float>();
 }
 
 void SmallGicpRelocalizationNode::publishTransform()
 {
-  if (result_T_.isZero()) {
+  if (result_t_.isZero()) {
     return;
   }
 
@@ -150,8 +150,8 @@ void SmallGicpRelocalizationNode::publishTransform()
   transform_stamped.header.frame_id = map_frame_id_;
   transform_stamped.child_frame_id = odom_frame_id_;
 
-  const Eigen::Vector3f translation = result_T_.block<3, 1>(0, 3);
-  const Eigen::Quaternionf rotation(result_T_.block<3, 3>(0, 0));
+  const Eigen::Vector3f translation = result_t_.block<3, 1>(0, 3);
+  const Eigen::Quaternionf rotation(result_t_.block<3, 3>(0, 0));
 
   transform_stamped.transform.translation.x = translation.x();
   transform_stamped.transform.translation.y = translation.y();
