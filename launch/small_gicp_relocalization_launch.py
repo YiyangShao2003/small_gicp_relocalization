@@ -24,9 +24,9 @@ def generate_launch_description():
                 "global_leaf_size": 0.25,
                 "registered_leaf_size": 0.25,
                 "max_dist_sq": 1.0,
-                "map_frame_id": "map",
-                "odom_frame_id": "odom",
-                "vel_ref_frame": "",
+                "map_frame": "map",
+                "odom_frame": "odom",
+                "base_frame": "",
                 "lidar_frame": "",
                 "prior_pcd_file": "",
             }

@@ -18,9 +18,9 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("global_leaf_size", 0.25);
   this->declare_parameter("registered_leaf_size", 0.25);
   this->declare_parameter("max_dist_sq", 1.0);
-  this->declare_parameter("map_frame_id", "map");
-  this->declare_parameter("odom_frame_id", "odom");
-  this->declare_parameter("vel_ref_frame", "");
+  this->declare_parameter("map_frame", "map");
+  this->declare_parameter("odom_frame", "odom");
+  this->declare_parameter("base_frame", "");
   this->declare_parameter("lidar_frame", "");
   this->declare_parameter("prior_pcd_file", "");
 
@@ -29,9 +29,9 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("global_leaf_size", global_leaf_size_);
   this->get_parameter("registered_leaf_size", registered_leaf_size_);
   this->get_parameter("max_dist_sq", max_dist_sq_);
-  this->get_parameter("map_frame_id", map_frame_id_);
-  this->get_parameter("odom_frame_id", odom_frame_id_);
-  this->get_parameter("vel_ref_frame", vel_ref_frame_);
+  this->get_parameter("map_frame", map_frame_);
+  this->get_parameter("odom_frame", odom_frame_);
+  this->get_parameter("base_frame", base_frame_);
   this->get_parameter("lidar_frame", lidar_frame_);
   this->get_parameter("prior_pcd_file", prior_pcd_file_);
 
@@ -84,7 +84,7 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
   while (true) {
     try {
       auto tf_stamped = tf_buffer_->lookupTransform(
-        vel_ref_frame_, lidar_frame_, this->now(), rclcpp::Duration::from_seconds(1.0));
+        base_frame_, lidar_frame_, this->now(), rclcpp::Duration::from_seconds(1.0));
       odom_to_lidar_odom = tf2::transformToEigen(tf_stamped.transform);
       RCLCPP_INFO_STREAM(
         this->get_logger(), "odom_to_lidar_odom: translation = "
@@ -148,8 +148,8 @@ void SmallGicpRelocalizationNode::publishTransform()
   geometry_msgs::msg::TransformStamped transform_stamped;
   // `+ 0.1` means transform into future. according to https://robotics.stackexchange.com/a/96615
   transform_stamped.header.stamp = last_scan_time_ + rclcpp::Duration::from_seconds(0.1);
-  transform_stamped.header.frame_id = map_frame_id_;
-  transform_stamped.child_frame_id = odom_frame_id_;
+  transform_stamped.header.frame_id = map_frame_;
+  transform_stamped.child_frame_id = odom_frame_;
 
   const Eigen::Vector3f translation = result_t_.block<3, 1>(0, 3);
   const Eigen::Quaternionf rotation(result_t_.block<3, 3>(0, 0));

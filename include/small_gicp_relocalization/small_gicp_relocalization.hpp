@@ -36,10 +36,10 @@ private:
   float registered_leaf_size_;
   float max_dist_sq_;
 
-  std::string map_frame_id_;
-  std::string odom_frame_id_;
+  std::string map_frame_;
+  std::string odom_frame_;
   std::string prior_pcd_file_;
-  std::string vel_ref_frame_;
+  std::string base_frame_;
   std::string lidar_frame_;
   rclcpp::Time last_scan_time_;
   Eigen::Matrix4f result_t_;
