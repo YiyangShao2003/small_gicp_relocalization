@@ -11,7 +11,9 @@ namespace small_gicp_relocalization
 {
 
 SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptions & options)
-: Node("small_gicp_relocalization", options)
+: Node("small_gicp_relocalization", options),
+  result_t_(Eigen::Isometry3d::Identity()),
+  previous_result_t_(Eigen::Isometry3d::Identity())
 {
   this->declare_parameter("num_threads", 4);
   this->declare_parameter("num_neighbors", 20);
@@ -69,8 +71,6 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   transform_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50),  // 20 Hz
     std::bind(&SmallGicpRelocalizationNode::publishTransform, this));
-
-  previous_result_t_ = Eigen::Isometry3d::Identity();
 }
 
 void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
@@ -138,13 +138,13 @@ void SmallGicpRelocalizationNode::performRegistration()
     return;
   }
 
-  result_t_ = result.T_target_source.matrix().cast<float>();
+  result_t_ = result.T_target_source;
   previous_result_t_ = result.T_target_source;
 }
 
 void SmallGicpRelocalizationNode::publishTransform()
 {
-  if (result_t_.isZero()) {
+  if (result_t_.matrix().isZero()) {
     return;
   }
 
@@ -154,8 +154,8 @@ void SmallGicpRelocalizationNode::publishTransform()
   transform_stamped.header.frame_id = map_frame_;
   transform_stamped.child_frame_id = odom_frame_;
 
-  const Eigen::Vector3f translation = result_t_.block<3, 1>(0, 3);
-  const Eigen::Quaternionf rotation(result_t_.block<3, 3>(0, 0));
+  const Eigen::Vector3d translation = result_t_.translation();
+  const Eigen::Quaterniond rotation(result_t_.rotation());
 
   transform_stamped.transform.translation.x = translation.x();
   transform_stamped.transform.translation.y = translation.y();
