@@ -69,6 +69,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   transform_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50),  // 20 Hz
     std::bind(&SmallGicpRelocalizationNode::publishTransform, this));
+
+  previous_result_t_ = Eigen::Isometry3d::Identity();
 }
 
 void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
@@ -128,8 +130,8 @@ void SmallGicpRelocalizationNode::performRegistration()
   register_->reduction.num_threads = num_threads_;
   register_->rejector.max_dist_sq = max_dist_sq_;
 
-  // Align point clouds
-  auto result = register_->align(*target_, *source_, *target_tree_, Eigen::Isometry3d::Identity());
+  // Align point clouds using the previous result as the initial transformation
+  auto result = register_->align(*target_, *source_, *target_tree_, previous_result_t_);
 
   if (!result.converged) {
     RCLCPP_WARN(this->get_logger(), "GICP did not converge.");
@@ -137,6 +139,7 @@ void SmallGicpRelocalizationNode::performRegistration()
   }
 
   result_t_ = result.T_target_source.matrix().cast<float>();
+  previous_result_t_ = result.T_target_source;
 }
 
 void SmallGicpRelocalizationNode::publishTransform()

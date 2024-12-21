@@ -43,6 +43,7 @@ private:
   std::string lidar_frame_;
   rclcpp::Time last_scan_time_;
   Eigen::Matrix4f result_t_;
+  Eigen::Isometry3d previous_result_t_;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr global_map_;
   pcl::PointCloud<pcl::PointXYZ>::Ptr registered_scan_;
