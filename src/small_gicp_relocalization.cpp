@@ -64,6 +64,10 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
     "registered_scan", 10,
     std::bind(&SmallGicpRelocalizationNode::registeredPcdCallback, this, std::placeholders::_1));
 
+  initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+    "initialpose", 10,
+    std::bind(&SmallGicpRelocalizationNode::initialPoseCallback, this, std::placeholders::_1));
+
   register_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(500),  // 2 Hz
     std::bind(&SmallGicpRelocalizationNode::performRegistration, this));
@@ -94,7 +98,7 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
                               << odom_to_lidar_odom.rotation().eulerAngles(0, 1, 2).transpose());
       break;
     } catch (tf2::TransformException & ex) {
-      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s. Retrying...", ex.what());
+      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s Retrying...", ex.what());
       rclcpp::sleep_for(std::chrono::seconds(1));
     }
   }
@@ -166,6 +170,25 @@ void SmallGicpRelocalizationNode::publishTransform()
   transform_stamped.transform.rotation.w = rotation.w();
 
   tf_broadcaster_->sendTransform(transform_stamped);
+}
+
+void SmallGicpRelocalizationNode::initialPoseCallback(
+  const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg)
+{
+  RCLCPP_INFO(
+    this->get_logger(), "Received initial pose: [x: %f, y: %f, z: %f]", msg->pose.pose.position.x,
+    msg->pose.pose.position.y, msg->pose.pose.position.z);
+
+  Eigen::Isometry3d initial_pose;
+  initial_pose.translation() << msg->pose.pose.position.x, msg->pose.pose.position.y,
+    msg->pose.pose.position.z;
+  initial_pose.linear() = Eigen::Quaterniond(
+                            msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
+                            msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
+                            .toRotationMatrix();
+
+  previous_result_t_ = initial_pose;
+  result_t_ = initial_pose;
 }
 
 }  // namespace small_gicp_relocalization
