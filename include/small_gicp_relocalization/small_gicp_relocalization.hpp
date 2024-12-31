@@ -1,19 +1,35 @@
+// Copyright 2024 Lihan Chen
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #ifndef SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
 #define SMALL_GICP_RELOCALIZATION__SMALL_GICP_RELOCALIZATION_HPP_
 
-#include <pcl/io/pcd_io.h>
-#include <tf2_ros/buffer.h>
-#include <tf2_ros/transform_broadcaster.h>
-#include <tf2_ros/transform_listener.h>
+#include <memory>
+#include <string>
 
-#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/point_cloud2.hpp>
-#include <small_gicp/ann/kdtree_omp.hpp>
-#include <small_gicp/factors/gicp_factor.hpp>
-#include <small_gicp/pcl/pcl_point.hpp>
-#include <small_gicp/registration/reduction_omp.hpp>
-#include <small_gicp/registration/registration.hpp>
+#include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
+#include "pcl/io/pcd_io.h"
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+#include "small_gicp/ann/kdtree_omp.hpp"
+#include "small_gicp/factors/gicp_factor.hpp"
+#include "small_gicp/pcl/pcl_point.hpp"
+#include "small_gicp/registration/reduction_omp.hpp"
+#include "small_gicp/registration/registration.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_broadcaster.h"
+#include "tf2_ros/transform_listener.h"
 
 namespace small_gicp_relocalization
 {
