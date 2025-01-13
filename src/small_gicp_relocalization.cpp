@@ -36,6 +36,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("map_frame", "map");
   this->declare_parameter("odom_frame", "odom");
   this->declare_parameter("base_frame", "");
+  this->declare_parameter("robot_base_frame", "");
   this->declare_parameter("lidar_frame", "");
   this->declare_parameter("prior_pcd_file", "");
 
@@ -47,6 +48,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("map_frame", map_frame_);
   this->get_parameter("odom_frame", odom_frame_);
   this->get_parameter("base_frame", base_frame_);
+  this->get_parameter("robot_base_frame", robot_base_frame_);
   this->get_parameter("lidar_frame", lidar_frame_);
   this->get_parameter("prior_pcd_file", prior_pcd_file_);
 
@@ -192,16 +194,27 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
     this->get_logger(), "Received initial pose: [x: %f, y: %f, z: %f]", msg->pose.pose.position.x,
     msg->pose.pose.position.y, msg->pose.pose.position.z);
 
-  Eigen::Isometry3d initial_pose;
-  initial_pose.translation() << msg->pose.pose.position.x, msg->pose.pose.position.y,
+  Eigen::Isometry3d map_to_robot_base = Eigen::Isometry3d::Identity();
+  map_to_robot_base.translation() << msg->pose.pose.position.x, msg->pose.pose.position.y,
     msg->pose.pose.position.z;
-  initial_pose.linear() = Eigen::Quaterniond(
-                            msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
-                            msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
-                            .toRotationMatrix();
+  map_to_robot_base.linear() = Eigen::Quaterniond(
+                                 msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
+                                 msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
+                                 .toRotationMatrix();
 
-  previous_result_t_ = initial_pose;
-  result_t_ = initial_pose;
+  try {
+    auto transform = tf_buffer_->lookupTransform(
+      robot_base_frame_, registered_scan_->header.frame_id, tf2::TimePointZero);
+    Eigen::Isometry3d robot_base_to_odom = tf2::transformToEigen(transform.transform);
+    Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
+
+    previous_result_t_ = map_to_odom;
+    result_t_ = map_to_odom;
+  } catch (tf2::TransformException & ex) {
+    RCLCPP_WARN(
+      this->get_logger(), "Could not transform initial pose from %s to %s: %s",
+      robot_base_frame_.c_str(), registered_scan_->header.frame_id.c_str(), ex.what());
+  }
 }
 
 }  // namespace small_gicp_relocalization
