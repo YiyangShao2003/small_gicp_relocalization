@@ -1,4 +1,4 @@
-// Copyright 2025 Lihan Chen
+// Copyright 2024 Lihan Chen
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ private:
   void performRegistration();
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
+  void publishPriorPcd();
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
@@ -59,7 +60,6 @@ private:
   std::string odom_frame_;
   std::string prior_pcd_file_;
   std::string base_frame_;
-  std::string robot_base_frame_;
   std::string lidar_frame_;
   rclcpp::Time last_scan_time_;
   Eigen::Isometry3d result_t_;
@@ -83,6 +83,11 @@ private:
 
   std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
   std::unique_ptr<tf2_ros::TransformListener> tf_listener_;
+
+  // Prior map publishing
+  bool pub_prior_pcd_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_pub_;
+  rclcpp::TimerBase::SharedPtr prior_pub_timer_;
 };
 
 }  // namespace small_gicp_relocalization

@@ -1,4 +1,4 @@
-// Copyright 2025 Lihan Chen
+// Copyright 2024 Lihan Chen
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   result_t_(Eigen::Isometry3d::Identity()),
   previous_result_t_(Eigen::Isometry3d::Identity())
 {
+  this->declare_parameter("pub_prior_pcd", false);
   this->declare_parameter("num_threads", 4);
   this->declare_parameter("num_neighbors", 20);
   this->declare_parameter("global_leaf_size", 0.25);
@@ -36,10 +37,10 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("map_frame", "map");
   this->declare_parameter("odom_frame", "odom");
   this->declare_parameter("base_frame", "");
-  this->declare_parameter("robot_base_frame", "");
   this->declare_parameter("lidar_frame", "");
   this->declare_parameter("prior_pcd_file", "");
 
+  this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
   this->get_parameter("num_threads", num_threads_);
   this->get_parameter("num_neighbors", num_neighbors_);
   this->get_parameter("global_leaf_size", global_leaf_size_);
@@ -48,7 +49,6 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("map_frame", map_frame_);
   this->get_parameter("odom_frame", odom_frame_);
   this->get_parameter("base_frame", base_frame_);
-  this->get_parameter("robot_base_frame", robot_base_frame_);
   this->get_parameter("lidar_frame", lidar_frame_);
   this->get_parameter("prior_pcd_file", prior_pcd_file_);
 
@@ -63,6 +63,13 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
 
   loadGlobalMap(prior_pcd_file_);
 
+  if (pub_prior_pcd_) {
+    prior_pcd_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("prior_pcd", 1);
+    prior_pub_timer_ = this->create_wall_timer(
+      std::chrono::seconds(1),  // 1Hz
+      std::bind(&SmallGicpRelocalizationNode::publishPriorPcd, this));
+  }
+
   // Downsample points and convert them into pcl::PointCloud<pcl::PointCovariance>
   target_ = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
@@ -76,7 +83,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
     target_, small_gicp::KdTreeBuilderOMP(num_threads_));
 
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "registered_scan", 10,
+    "cloud_registered", 10,
     std::bind(&SmallGicpRelocalizationNode::registeredPcdCallback, this, std::placeholders::_1));
 
   initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -91,6 +98,20 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
     std::chrono::milliseconds(50),  // 20 Hz
     std::bind(&SmallGicpRelocalizationNode::publishTransform, this));
 }
+
+void SmallGicpRelocalizationNode::publishPriorPcd()
+{
+  if (!global_map_ || global_map_->empty()) {
+    return;
+  }
+
+  sensor_msgs::msg::PointCloud2 msg;
+  pcl::toROSMsg(*global_map_, msg);
+  msg.header.stamp = this->now();
+  msg.header.frame_id = map_frame_;
+  prior_pcd_pub_->publish(msg);
+}
+
 
 void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
 {
@@ -194,27 +215,16 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
     this->get_logger(), "Received initial pose: [x: %f, y: %f, z: %f]", msg->pose.pose.position.x,
     msg->pose.pose.position.y, msg->pose.pose.position.z);
 
-  Eigen::Isometry3d map_to_robot_base = Eigen::Isometry3d::Identity();
-  map_to_robot_base.translation() << msg->pose.pose.position.x, msg->pose.pose.position.y,
+  Eigen::Isometry3d initial_pose;
+  initial_pose.translation() << msg->pose.pose.position.x, msg->pose.pose.position.y,
     msg->pose.pose.position.z;
-  map_to_robot_base.linear() = Eigen::Quaterniond(
-                                 msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
-                                 msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
-                                 .toRotationMatrix();
+  initial_pose.linear() = Eigen::Quaterniond(
+                            msg->pose.pose.orientation.w, msg->pose.pose.orientation.x,
+                            msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
+                            .toRotationMatrix();
 
-  try {
-    auto transform = tf_buffer_->lookupTransform(
-      robot_base_frame_, registered_scan_->header.frame_id, tf2::TimePointZero);
-    Eigen::Isometry3d robot_base_to_odom = tf2::transformToEigen(transform.transform);
-    Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
-
-    previous_result_t_ = map_to_odom;
-    result_t_ = map_to_odom;
-  } catch (tf2::TransformException & ex) {
-    RCLCPP_WARN(
-      this->get_logger(), "Could not transform initial pose from %s to %s: %s",
-      robot_base_frame_.c_str(), registered_scan_->header.frame_id.c_str(), ex.what());
-  }
+  previous_result_t_ = initial_pose;
+  result_t_ = initial_pose;
 }
 
 }  // namespace small_gicp_relocalization

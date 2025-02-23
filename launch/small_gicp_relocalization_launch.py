@@ -1,4 +1,4 @@
-# Copyright 2025 Lihan Chen
+# Copyright 2024 Lihan Chen
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,9 +40,10 @@ def generate_launch_description():
                 "max_dist_sq": 1.0,
                 "map_frame": "map",
                 "odom_frame": "odom",
-                "base_frame": "",
-                "lidar_frame": "",
-                "prior_pcd_file": "",
+                "base_frame": "livox_frame",
+                "lidar_frame": "livox_frame",
+                "prior_pcd_file": "/home/nuc/RM2025/ws_dev_localization/src/small_gicp_relocalization/pcd/GlobalMap.pcd",
+                "pub_prior_pcd": True,
             }
         ],
     )
