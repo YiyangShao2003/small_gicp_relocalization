@@ -17,6 +17,8 @@
 
 #include <memory>
 #include <string>
+#include <mutex>
+#include <deque>
 
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "pcl/io/pcd_io.h"
@@ -104,6 +106,10 @@ private:
   double relocalization_x_step_;
   double relocalization_y_step_;
   double relocalization_yaw_step_deg_;
+
+  // Point cloud accumulation
+  std::deque<std::pair<rclcpp::Time, pcl::PointCloud<pcl::PointXYZ>::Ptr>> accumulated_clouds_;
+  std::mutex cloud_mutex_;
 };
 
 }  // namespace small_gicp_relocalization

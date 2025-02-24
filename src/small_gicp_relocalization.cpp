@@ -28,6 +28,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   result_t_(Eigen::Isometry3d::Identity()),
   previous_result_t_(Eigen::Isometry3d::Identity())
 {
+  // Declare parameters
   this->declare_parameter("pub_prior_pcd", false);
   this->declare_parameter("num_threads", 4);
   this->declare_parameter("num_neighbors", 20);
@@ -48,6 +49,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("relocalization_yaw_step_deg", 10.0);
   this->declare_parameter("pointcloud_topic", "cloud_registered");
 
+  // Get parameters
   this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
   this->get_parameter("num_threads", num_threads_);
   this->get_parameter("num_neighbors", num_neighbors_);
@@ -208,17 +210,14 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 
   pcl::fromROSMsg(*msg, *registered_scan_);
 
-  // Downsample Registered points and convert them into pcl::PointCloud<pcl::PointCovariance>.
-  source_ = small_gicp::voxelgrid_sampling_omp<
-    pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
-    *registered_scan_, registered_leaf_size_);
+  // Lock the mutex to safely access the accumulated_clouds_ buffer
+  {
+    std::lock_guard<std::mutex> lock(cloud_mutex_);
+    // Add the latest scan to the accumulation buffer with timestamp
+    accumulated_clouds_.emplace_back(msg->header.stamp, registered_scan_);
+  }
 
-  // Estimate point covariances
-  small_gicp::estimate_covariances_omp(*source_, num_neighbors_, num_threads_);
-
-  // Create KdTree for source.
-  source_tree_ = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(
-    source_, small_gicp::KdTreeBuilderOMP(num_threads_));
+  // Note: The actual processing of accumulated clouds is handled in performRegistration()
 }
 
 // --------------------------------------------------
@@ -226,11 +225,57 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 // --------------------------------------------------
 void SmallGicpRelocalizationNode::performRegistration()
 {
-  if (!source_ || !source_tree_) {
+  pcl::PointCloud<pcl::PointXYZ>::Ptr merged_scan(new pcl::PointCloud<pcl::PointXYZ>());
+
+  // Define accumulation window duration (e.g., 0.5 seconds)
+  rclcpp::Duration accumulation_window = rclcpp::Duration::from_seconds(0.5);
+
+  // Current time
+  rclcpp::Time current_time = this->now();
+
+  // Lock the mutex to safely access and modify the accumulated_clouds_ buffer
+  {
+    std::lock_guard<std::mutex> lock(cloud_mutex_);
+    if (accumulated_clouds_.empty()) {
+      RCLCPP_WARN(this->get_logger(), "No accumulated point clouds available for registration.");
+      return;
+    }
+
+    // Iterate through the deque and collect point clouds within the accumulation window
+    while (!accumulated_clouds_.empty()) {
+      // Get the oldest point cloud in the buffer
+      auto & oldest = accumulated_clouds_.front();
+      rclcpp::Time cloud_time = oldest.first;
+
+      // Check if the point cloud is within the accumulation window
+      if ((current_time - cloud_time) <= accumulation_window) {
+        *merged_scan += *(oldest.second);
+        accumulated_clouds_.pop_front();
+      } else {
+        // Remove point clouds older than the accumulation window
+        accumulated_clouds_.pop_front();
+      }
+    }
+  }
+
+  if (merged_scan->empty()) {
+    RCLCPP_WARN(this->get_logger(), "No point clouds within the accumulation window for registration.");
     return;
   }
 
-  // First perform regular GICP registration
+  // Downsample the merged scan and convert to PointCovariance
+  source_ = small_gicp::voxelgrid_sampling_omp<
+    pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
+    *merged_scan, registered_leaf_size_);
+
+  // Estimate point covariances
+  small_gicp::estimate_covariances_omp(*source_, num_neighbors_, num_threads_);
+
+  // Create KdTree for source.
+  source_tree_ = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(
+    source_, small_gicp::KdTreeBuilderOMP(num_threads_));
+
+  // Perform regular GICP registration
   auto result = alignOnce(*target_, *source_, previous_result_t_);
   if (result.converged) {
     // Registration successful, update result_t_
