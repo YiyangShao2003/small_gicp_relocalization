@@ -25,6 +25,7 @@ namespace small_gicp_relocalization
 
 SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptions & options)
 : Node("small_gicp_relocalization", options),
+  consecutive_failures_(0),
   filtered_result_t_(Eigen::Isometry3d::Identity()),
   previous_result_t_(Eigen::Isometry3d::Identity())
 {
@@ -49,6 +50,9 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("relocalization_yaw_step_deg", 10.0);
   this->declare_parameter("pointcloud_topic", "cloud_registered");
   this->declare_parameter("filter_alpha", 0.5);
+  
+  // Declare new parameter for consecutive failure threshold
+  this->declare_parameter("max_consecutive_failures", 3);  // Default to 3 consecutive failures
 
   // Get parameters
   this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
@@ -71,6 +75,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("relocalization_yaw_step_deg", relocalization_yaw_step_deg_);
   this->get_parameter("pointcloud_topic", pointcloud_topic_);
   this->get_parameter("filter_alpha", filter_alpha_);
+  this->get_parameter("max_consecutive_failures", max_consecutive_failures_);  // Get failure threshold
   
   // ---------------------
   // Initialize processing objects
@@ -299,11 +304,25 @@ void SmallGicpRelocalizationNode::performRegistration()
     // Update previous_result_t_ for the next iteration
     previous_result_t_ = filtered_result_t_;
     
+    // Reset consecutive failures count on successful registration
+    consecutive_failures_ = 0;
+    
   } else {
     // Registration not converged, try relocalization if enabled
     RCLCPP_WARN(this->get_logger(), "GICP did not converge in normal matching.");
     if (enable_relocalization_) {
-      performRelocalization();
+      // Increment consecutive failures count
+      consecutive_failures_++;
+
+      // Check if the consecutive failures exceed the threshold
+      if (consecutive_failures_ >= max_consecutive_failures_) {
+        performRelocalization();
+        // Reset consecutive failures count after attempting relocalization
+        consecutive_failures_ = 0;
+      } else {
+        RCLCPP_WARN(this->get_logger(), "Consecutive failures: %d/%d. Relocalization not triggered yet.",
+                    consecutive_failures_, max_consecutive_failures_);
+      }
     }
   }
 }
@@ -423,6 +442,7 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
 
   previous_result_t_ = initial_pose;
   filtered_result_t_ = initial_pose;
+  consecutive_failures_ = 0;  // Reset consecutive failures on initial pose
 }
 
 }  // namespace small_gicp_relocalization

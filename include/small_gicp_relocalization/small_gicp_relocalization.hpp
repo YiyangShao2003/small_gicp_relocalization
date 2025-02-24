@@ -65,6 +65,9 @@ private:
 
   float filter_alpha_;
 
+  int consecutive_failures_;
+  int max_consecutive_failures_;
+
   std::string pointcloud_topic_;
 
   std::string map_frame_;
