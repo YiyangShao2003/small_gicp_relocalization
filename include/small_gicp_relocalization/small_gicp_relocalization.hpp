@@ -63,6 +63,8 @@ private:
   float registered_leaf_size_;
   float max_dist_sq_;
 
+  float filter_alpha_;
+
   std::string pointcloud_topic_;
 
   std::string map_frame_;
@@ -71,7 +73,7 @@ private:
   std::string base_frame_;
   std::string lidar_frame_;
   rclcpp::Time last_scan_time_;
-  Eigen::Isometry3d result_t_;
+  Eigen::Isometry3d filtered_result_t_;
   Eigen::Isometry3d previous_result_t_;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr global_map_;

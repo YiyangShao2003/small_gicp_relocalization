@@ -52,6 +52,7 @@ def generate_launch_description():
                 "relocalization_x_step": 0.4,
                 "relocalization_y_step": 0.4,
                 "relocalization_yaw_step_deg": 10.0,
+                "filter_alpha": 0.1,
             }
         ],
     )

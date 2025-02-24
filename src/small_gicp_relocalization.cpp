@@ -25,7 +25,7 @@ namespace small_gicp_relocalization
 
 SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptions & options)
 : Node("small_gicp_relocalization", options),
-  result_t_(Eigen::Isometry3d::Identity()),
+  filtered_result_t_(Eigen::Isometry3d::Identity()),
   previous_result_t_(Eigen::Isometry3d::Identity())
 {
   // Declare parameters
@@ -48,6 +48,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("relocalization_y_step", 1.0);
   this->declare_parameter("relocalization_yaw_step_deg", 10.0);
   this->declare_parameter("pointcloud_topic", "cloud_registered");
+  this->declare_parameter("filter_alpha", 0.5);
 
   // Get parameters
   this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
@@ -69,6 +70,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("relocalization_y_step", relocalization_y_step_);
   this->get_parameter("relocalization_yaw_step_deg", relocalization_yaw_step_deg_);
   this->get_parameter("pointcloud_topic", pointcloud_topic_);
+  this->get_parameter("filter_alpha", filter_alpha_);
   
   // ---------------------
   // Initialize processing objects
@@ -278,9 +280,25 @@ void SmallGicpRelocalizationNode::performRegistration()
   // Perform regular GICP registration
   auto result = alignOnce(*target_, *source_, previous_result_t_);
   if (result.converged) {
-    // Registration successful, update result_t_
-    result_t_        = result.T_target_source;
-    previous_result_t_ = result.T_target_source;
+    // Registration successful, update filtered_result_t_
+
+    // Apply low-pass filter to the translation
+    Eigen::Vector3d filtered_translation = 
+      filter_alpha_ * result.T_target_source.translation() + 
+      (1.0 - filter_alpha_) * filtered_result_t_.translation();
+
+    // Apply low-pass filter to the rotation using Slerp
+    Eigen::Quaterniond current_q(result.T_target_source.rotation());
+    Eigen::Quaterniond filtered_q = Eigen::Quaterniond(filtered_result_t_.rotation())
+                                     .slerp(filter_alpha_, current_q);
+
+    // Update the filtered result
+    filtered_result_t_.linear() = filtered_q.toRotationMatrix();
+    filtered_result_t_.translation() = filtered_translation;
+
+    // Update previous_result_t_ for the next iteration
+    previous_result_t_ = filtered_result_t_;
+    
   } else {
     // Registration not converged, try relocalization if enabled
     RCLCPP_WARN(this->get_logger(), "GICP did not converge in normal matching.");
@@ -352,7 +370,7 @@ void SmallGicpRelocalizationNode::performRelocalization()
 
   // Found optimal solution, update
   RCLCPP_INFO(this->get_logger(), "Relocalization success, min_error=%.4f", min_error);
-  result_t_         = best_result.T_target_source;
+  filtered_result_t_ = best_result.T_target_source;
   previous_result_t_ = best_result.T_target_source;
 }
 
@@ -361,7 +379,7 @@ void SmallGicpRelocalizationNode::performRelocalization()
 // --------------------------------------------------
 void SmallGicpRelocalizationNode::publishTransform()
 {
-  if (result_t_.matrix().isZero()) {
+  if (filtered_result_t_.matrix().isZero()) {
     return;
   }
 
@@ -371,8 +389,8 @@ void SmallGicpRelocalizationNode::publishTransform()
   transform_stamped.header.frame_id = map_frame_;
   transform_stamped.child_frame_id  = odom_frame_;
 
-  const Eigen::Vector3d translation = result_t_.translation();
-  const Eigen::Quaterniond rotation(result_t_.rotation());
+  const Eigen::Vector3d translation = filtered_result_t_.translation();
+  const Eigen::Quaterniond rotation(filtered_result_t_.rotation());
 
   transform_stamped.transform.translation.x = translation.x();
   transform_stamped.transform.translation.y = translation.y();
@@ -404,7 +422,7 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
                             .toRotationMatrix();
 
   previous_result_t_ = initial_pose;
-  result_t_          = initial_pose;
+  filtered_result_t_ = initial_pose;
 }
 
 }  // namespace small_gicp_relocalization
