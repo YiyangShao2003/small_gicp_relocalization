@@ -42,7 +42,12 @@ public:
 private:
   void registeredPcdCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
   void loadGlobalMap(const std::string & file_name);
+  small_gicp::RegistrationResult alignOnce(
+    const pcl::PointCloud<pcl::PointCovariance> & target,
+    const pcl::PointCloud<pcl::PointCovariance> & source,
+    const Eigen::Isometry3d & initial_guess);
   void performRegistration();
+  void performRelocalization();
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void publishPriorPcd();
@@ -88,6 +93,15 @@ private:
   bool pub_prior_pcd_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_pub_;
   rclcpp::TimerBase::SharedPtr prior_pub_timer_;
+
+  // Relocalization
+  bool enable_relocalization_;
+  double relocalization_x_range_;
+  double relocalization_y_range_;
+  double relocalization_yaw_range_deg_;
+  double relocalization_x_step_;
+  double relocalization_y_step_;
+  double relocalization_yaw_step_deg_;
 };
 
 }  // namespace small_gicp_relocalization

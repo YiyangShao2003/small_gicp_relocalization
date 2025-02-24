@@ -44,6 +44,13 @@ def generate_launch_description():
                 "lidar_frame": "livox_frame",
                 "prior_pcd_file": "/home/nuc/RM2025/ws_dev_localization/src/localization_packages/small_gicp_relocalization/pcd/GlobalMap.pcd",
                 "pub_prior_pcd": True,
+                "enable_relocalization": True,
+                "relocalization_x_range": 2.0,
+                "relocalization_y_range": 2.0,
+                "relocalization_yaw_range_deg": 90.0,
+                "relocalization_x_step": 0.4,
+                "relocalization_y_step": 0.4,
+                "relocalization_yaw_step_deg": 10.0,
             }
         ],
     )
