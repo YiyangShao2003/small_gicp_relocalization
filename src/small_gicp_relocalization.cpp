@@ -46,6 +46,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("relocalization_x_step", 1.0);
   this->declare_parameter("relocalization_y_step", 1.0);
   this->declare_parameter("relocalization_yaw_step_deg", 10.0);
+  this->declare_parameter("pointcloud_topic", "cloud_registered");
 
   this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
   this->get_parameter("num_threads", num_threads_);
@@ -65,6 +66,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("relocalization_x_step", relocalization_x_step_);
   this->get_parameter("relocalization_y_step", relocalization_y_step_);
   this->get_parameter("relocalization_yaw_step_deg", relocalization_yaw_step_deg_);
+  this->get_parameter("pointcloud_topic", pointcloud_topic_);
   
   // ---------------------
   // Initialize processing objects
@@ -109,7 +111,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   // Subscribe to point cloud (registered)
   // ---------------------
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    "cloud_registered", 10,
+    pointcloud_topic_, 10,
     std::bind(&SmallGicpRelocalizationNode::registeredPcdCallback, this, std::placeholders::_1));
 
   // ---------------------

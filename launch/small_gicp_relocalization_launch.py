@@ -38,6 +38,7 @@ def generate_launch_description():
                 "global_leaf_size": 0.25,
                 "registered_leaf_size": 0.25,
                 "max_dist_sq": 1.0,
+                "pointcloud_topic": "cloud_registered",
                 "map_frame": "map",
                 "odom_frame": "odom",
                 "base_frame": "livox_frame",

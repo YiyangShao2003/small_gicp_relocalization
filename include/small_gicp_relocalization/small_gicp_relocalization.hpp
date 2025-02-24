@@ -61,6 +61,8 @@ private:
   float registered_leaf_size_;
   float max_dist_sq_;
 
+  std::string pointcloud_topic_;
+
   std::string map_frame_;
   std::string odom_frame_;
   std::string prior_pcd_file_;
