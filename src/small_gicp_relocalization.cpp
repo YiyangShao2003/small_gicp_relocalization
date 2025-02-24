@@ -266,8 +266,8 @@ void SmallGicpRelocalizationNode::performRegistration()
   }
 
   if (merged_scan->empty()) {
-    RCLCPP_WARN(this->get_logger(), "No point clouds within the accumulation window for registration.");
-    return;
+    RCLCPP_WARN(this->get_logger(), "No point clouds within the accumulation window. Switch to latest point cloud.");
+    merged_scan = registered_scan_;
   }
 
   // Downsample the merged scan and convert to PointCovariance
