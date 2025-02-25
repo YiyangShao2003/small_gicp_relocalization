@@ -120,7 +120,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   // Subscribe to point cloud (registered)
   // ---------------------
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-    pointcloud_topic_, 10,
+    pointcloud_topic_,
+    rclcpp::SensorDataQoS(),
     std::bind(&SmallGicpRelocalizationNode::registeredPcdCallback, this, std::placeholders::_1));
 
   // ---------------------
