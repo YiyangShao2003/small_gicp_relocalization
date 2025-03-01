@@ -249,21 +249,16 @@ void SmallGicpRelocalizationNode::performRegistration()
       return;
     }
 
-    // Iterate through the deque and collect point clouds within the accumulation window
-    while (!accumulated_clouds_.empty()) {
-      // Get the oldest point cloud in the buffer
-      auto & oldest = accumulated_clouds_.front();
-      rclcpp::Time cloud_time = oldest.first;
-
-      // Check if the point cloud is within the accumulation window
-      if ((current_time - cloud_time) <= accumulation_window) {
-        *merged_scan += *(oldest.second);
-        accumulated_clouds_.pop_front();
-      } else {
-        // Remove point clouds older than the accumulation window
-        accumulated_clouds_.pop_front();
-      }
+    while (!accumulated_clouds_.empty() && (current_time - accumulated_clouds_.front().first) > accumulation_window) {
+      accumulated_clouds_.pop_front();
     }
+    // Iterate over all point clouds in the buffer and merge them
+    int num_clouds = 0;
+    for (const auto & cloud : accumulated_clouds_) {
+      *merged_scan += *(cloud.second);
+      num_clouds ++;
+    }
+    RCLCPP_INFO(this->get_logger(), "Merged %d point clouds within the accumulation window.", num_clouds);
   }
 
   if (merged_scan->empty()) {
