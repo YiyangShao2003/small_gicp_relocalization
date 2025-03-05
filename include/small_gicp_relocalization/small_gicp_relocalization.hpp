@@ -62,6 +62,7 @@ private:
   float global_leaf_size_;
   float registered_leaf_size_;
   float max_dist_sq_;
+  size_t min_inliers_threshold_; // Minimum number of inlier points required for a valid match
 
   float filter_alpha_;
 

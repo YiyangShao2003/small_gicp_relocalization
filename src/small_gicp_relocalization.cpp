@@ -50,9 +50,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("relocalization_yaw_step_deg", 10.0);
   this->declare_parameter("pointcloud_topic", "cloud_registered");
   this->declare_parameter("filter_alpha", 0.5);
-  
-  // Declare new parameter for consecutive failure threshold
   this->declare_parameter("max_consecutive_failures", 3);  // Default to 3 consecutive failures
+  this->declare_parameter("min_inliers_threshold", 1000);
 
   // Get parameters
   this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
@@ -76,6 +75,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("pointcloud_topic", pointcloud_topic_);
   this->get_parameter("filter_alpha", filter_alpha_);
   this->get_parameter("max_consecutive_failures", max_consecutive_failures_);  // Get failure threshold
+  this->get_parameter("min_inliers_threshold", min_inliers_threshold_);
   
   // ---------------------
   // Initialize processing objects
@@ -267,7 +267,7 @@ void SmallGicpRelocalizationNode::performRegistration()
   }
 
   if (merged_scan->empty()) {
-    RCLCPP_WARN(this->get_logger(), "No point clouds within the accumulation window. Switch to latest point cloud.");
+    RCLCPP_WARN(this->get_logger(), "No point clouds within the accumulation window. Switching to latest point cloud.");
     merged_scan = registered_scan_;
   }
 
@@ -285,12 +285,13 @@ void SmallGicpRelocalizationNode::performRegistration()
 
   // Perform regular GICP registration
   auto result = alignOnce(*target_, *source_, previous_result_t_);
-  if (result.converged) {
+
+  if (result.converged && result.num_inliers >= min_inliers_threshold_) {
     // Registration successful, update filtered_result_t_
 
     // Apply low-pass filter to the translation
-    Eigen::Vector3d filtered_translation = 
-      filter_alpha_ * result.T_target_source.translation() + 
+    Eigen::Vector3d filtered_translation =
+      filter_alpha_ * result.T_target_source.translation() +
       (1.0 - filter_alpha_) * filtered_result_t_.translation();
 
     // Apply low-pass filter to the rotation using Slerp
@@ -304,13 +305,14 @@ void SmallGicpRelocalizationNode::performRegistration()
 
     // Update previous_result_t_ for the next iteration
     previous_result_t_ = filtered_result_t_;
-    
+
     // Reset consecutive failures count on successful registration
     consecutive_failures_ = 0;
-    
+
   } else {
-    // Registration did not converge; try relocalization if enabled
-    RCLCPP_WARN(this->get_logger(), "GICP did not converge in normal matching.");
+    // Registration is either not converged or has insufficient inliers.
+    RCLCPP_WARN(this->get_logger(), "GICP matching unreliable (converged: %d, inliers: %zu).", 
+                result.converged, result.num_inliers);
     if (enable_relocalization_) {
       // Increment consecutive failures count
       consecutive_failures_++;
@@ -377,7 +379,7 @@ void SmallGicpRelocalizationNode::performRelocalization()
 
           // Perform complete GICP alignment
           auto result = alignOnce(*target_, *source_, guess);
-          if (result.converged) {
+          if (result.converged && result.num_inliers >= min_inliers_threshold_) {
             double error = result.error;
             if (error < min_error) {
               min_error = error;
