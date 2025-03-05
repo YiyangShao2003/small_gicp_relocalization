@@ -54,7 +54,7 @@ def generate_launch_description():
                 "relocalization_yaw_step_deg": 45.0,
                 "filter_alpha": 0.2,
                 "max_consecutive_failures": 3,
-                "min_inliers_threshold": 1000,
+                "min_inliers_threshold": 300,
             }
         ],
     )

@@ -328,6 +328,11 @@ void SmallGicpRelocalizationNode::performRegistration()
       }
     }
   }
+
+  if (!todo_first_relocalization_) {
+    performRelocalization();
+    todo_first_relocalization_ = true;
+  }
 }
 
 // --------------------------------------------------
@@ -370,8 +375,7 @@ void SmallGicpRelocalizationNode::performRelocalization()
           // Set translation: center plus an offset
           guess.translation().x() = center_x + dx;
           guess.translation().y() = center_y + dy;
-          // Keep the z component unchanged (use the z from the previous result)
-          guess.translation().z() = previous_result_t_.translation().z();
+          guess.translation().z() = 0.0;
 
           // Set rotation: using the center yaw plus an offset
           Eigen::AngleAxisd rot_z(center_yaw + dyaw, Eigen::Vector3d::UnitZ());

@@ -105,6 +105,7 @@ private:
   rclcpp::TimerBase::SharedPtr prior_pub_timer_;
 
   // Relocalization
+  bool todo_first_relocalization_{false};
   bool enable_relocalization_;
   double relocalization_x_range_;
   double relocalization_y_range_;
