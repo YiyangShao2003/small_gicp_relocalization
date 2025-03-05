@@ -309,7 +309,7 @@ void SmallGicpRelocalizationNode::performRegistration()
     consecutive_failures_ = 0;
     
   } else {
-    // Registration not converged, try relocalization if enabled
+    // Registration did not converge; try relocalization if enabled
     RCLCPP_WARN(this->get_logger(), "GICP did not converge in normal matching.");
     if (enable_relocalization_) {
       // Increment consecutive failures count
@@ -335,60 +335,73 @@ void SmallGicpRelocalizationNode::performRelocalization()
 {
   RCLCPP_INFO(this->get_logger(), "Start re-localization...");
 
-  // Sample around previous_result_t_
-  const double center_x   = previous_result_t_.translation().x();
-  const double center_y   = previous_result_t_.translation().y();
-  
-  // Extract yaw (Z rotation) from rotation matrix using eulerAngles(0,1,2).z()
-  Eigen::Vector3d eulers   = previous_result_t_.rotation().eulerAngles(0, 1, 2);
-  double center_yaw        = eulers.z();  // In radians
-
   bool any_converged = false;
-  double min_error   = std::numeric_limits<double>::max();
+  double min_error = std::numeric_limits<double>::max();
   small_gicp::RegistrationResult best_result;
 
-  // Calculate yaw sampling step in radians
-  double yaw_range_rad     = relocalization_yaw_range_deg_ * M_PI / 180.0;
-  double yaw_step_rad      = relocalization_yaw_step_deg_  * M_PI / 180.0;
+  // ------------------------------
+  // Define two search centers:
+  // 1. Local search: centered at the current (previous) result.
+  // 2. Global search: centered at the map origin (assumed to be (0,0) with 0 yaw).
+  // ------------------------------
 
-  // Sample within ranges:
-  // x: [center_x - x_range, center_x + x_range]
-  // y: [center_y - y_range, center_y + y_range]
-  // yaw: [center_yaw - yaw_range_rad, center_yaw + yaw_range_rad]
-  for (double dx = -relocalization_x_range_; dx <= relocalization_x_range_; dx += relocalization_x_step_) {
-    for (double dy = -relocalization_y_range_; dy <= relocalization_y_range_; dy += relocalization_y_step_) {
-      for (double dyaw = -yaw_range_rad; dyaw <= yaw_range_rad; dyaw += yaw_step_rad) {
-        Eigen::Isometry3d guess = Eigen::Isometry3d::Identity();
-        // Translation
-        guess.translation().x() = center_x + dx;
-        guess.translation().y() = center_y + dy;
-        guess.translation().z() = previous_result_t_.translation().z();  // Keep z unchanged or define custom
+  // Local search center from previous result
+  double local_center_x = previous_result_t_.translation().x();
+  double local_center_y = previous_result_t_.translation().y();
+  double local_center_yaw = previous_result_t_.rotation().eulerAngles(0, 1, 2).z();
 
-        // Rotation: around Z axis
-        Eigen::AngleAxisd rot_z(center_yaw + dyaw, Eigen::Vector3d::UnitZ());
-        guess.linear() = rot_z.toRotationMatrix();
+  // Global search center at map origin
+  double global_center_x = 0.0;
+  double global_center_y = 0.0;
+  double global_center_yaw = 0.0;  // Assuming 0 rotation at the map origin
 
-        // Perform complete GICP
-        auto result = alignOnce(*target_, *source_, guess);
-        if (result.converged) {
-          // Record error 
-          double error = result.error;
-          if (error < min_error) {
-            min_error   = error;
-            best_result  = result;
-            any_converged = true;
+  // Calculate yaw sampling range and step in radians
+  double yaw_range_rad = relocalization_yaw_range_deg_ * M_PI / 180.0;
+  double yaw_step_rad  = relocalization_yaw_step_deg_  * M_PI / 180.0;
+
+  // Lambda function to perform candidate search given a center and its yaw
+  auto searchCandidates = [&](double center_x, double center_y, double center_yaw) {
+    for (double dx = -relocalization_x_range_; dx <= relocalization_x_range_; dx += relocalization_x_step_) {
+      for (double dy = -relocalization_y_range_; dy <= relocalization_y_range_; dy += relocalization_y_step_) {
+        for (double dyaw = -yaw_range_rad; dyaw <= yaw_range_rad; dyaw += yaw_step_rad) {
+          Eigen::Isometry3d guess = Eigen::Isometry3d::Identity();
+          // Set translation: center plus an offset
+          guess.translation().x() = center_x + dx;
+          guess.translation().y() = center_y + dy;
+          // Keep the z component unchanged (use the z from the previous result)
+          guess.translation().z() = previous_result_t_.translation().z();
+
+          // Set rotation: using the center yaw plus an offset
+          Eigen::AngleAxisd rot_z(center_yaw + dyaw, Eigen::Vector3d::UnitZ());
+          guess.linear() = rot_z.toRotationMatrix();
+
+          // Perform complete GICP alignment
+          auto result = alignOnce(*target_, *source_, guess);
+          if (result.converged) {
+            double error = result.error;
+            if (error < min_error) {
+              min_error = error;
+              best_result = result;
+              any_converged = true;
+            }
           }
         }
       }
     }
-  }
+  };
+
+  // Execute local search around the previous result
+  searchCandidates(local_center_x, local_center_y, local_center_yaw);
+
+  // Execute global search around the map origin
+  searchCandidates(global_center_x, global_center_y, global_center_yaw);
 
   if (!any_converged) {
     RCLCPP_WARN(this->get_logger(), "Relocalization failed: no candidate converged.");
     return;
   }
 
-  // Found optimal solution, update
+  // Optimal candidate found; update the filtered and previous results
   RCLCPP_INFO(this->get_logger(), "Relocalization success, min_error=%.4f", min_error);
   filtered_result_t_ = best_result.T_target_source;
   previous_result_t_ = best_result.T_target_source;
@@ -404,7 +417,7 @@ void SmallGicpRelocalizationNode::publishTransform()
   }
 
   geometry_msgs::msg::TransformStamped transform_stamped;
-  // `+ 0.1` means transform into future. according to https://robotics.stackexchange.com/a/96615
+  // "+ 0.1" means transforming into the future. See https://robotics.stackexchange.com/a/96615
   transform_stamped.header.stamp = last_scan_time_ + rclcpp::Duration::from_seconds(0.1);
   transform_stamped.header.frame_id = map_frame_;
   transform_stamped.child_frame_id  = odom_frame_;

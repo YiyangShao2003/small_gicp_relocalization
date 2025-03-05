@@ -43,7 +43,7 @@ def generate_launch_description():
                 "odom_frame": "odom",
                 "base_frame": "livox_frame",
                 "lidar_frame": "livox_frame",
-                "prior_pcd_file": "/home/nuc/RM2025/ws_dev_localization/src/localization_packages/small_gicp_relocalization/pcd/GlobalMap.pcd",
+                "prior_pcd_file": "/home/nuc/RM2025/ws_dev_localization/src/localization_packages/small_gicp_relocalization/pcd/GlobalMapSegment.pcd",
                 "pub_prior_pcd": True,
                 "enable_relocalization": True,
                 "relocalization_x_range": 2.0,
