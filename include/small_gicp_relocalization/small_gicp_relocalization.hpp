@@ -18,7 +18,8 @@
 #include <memory>
 #include <string>
 #include <mutex>
-#include <deque>
+#include <thread>
+#include <atomic>
 
 #include "geometry_msgs/msg/pose_with_covariance_stamped.hpp"
 #include "pcl/io/pcd_io.h"
@@ -40,6 +41,7 @@ class SmallGicpRelocalizationNode : public rclcpp::Node
 {
 public:
   explicit SmallGicpRelocalizationNode(const rclcpp::NodeOptions & options);
+  ~SmallGicpRelocalizationNode();  // Destructor to join the matching thread
 
 private:
   void registeredPcdCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg);
@@ -53,6 +55,8 @@ private:
   void publishTransform();
   void initialPoseCallback(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr msg);
   void publishPriorPcd();
+
+  void matchingLoop();
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr pcd_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr initial_pose_sub_;
@@ -114,9 +118,12 @@ private:
   double relocalization_y_step_;
   double relocalization_yaw_step_deg_;
 
-  // Point cloud accumulation
-  std::deque<std::pair<rclcpp::Time, pcl::PointCloud<pcl::PointXYZ>::Ptr>> accumulated_clouds_;
+  // Mutex to protect the latest scan resource.
   std::mutex cloud_mutex_;
+
+  // Asynchronous matching thread:
+  std::thread matching_thread_;
+  std::atomic<bool> matching_thread_running_{true};
 };
 
 }  // namespace small_gicp_relocalization

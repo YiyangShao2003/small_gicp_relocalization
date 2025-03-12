@@ -14,6 +14,9 @@
 
 #include "small_gicp_relocalization/small_gicp_relocalization.hpp"
 
+#include <chrono>
+#include <thread>
+
 #include "pcl/common/transforms.h"
 #include "pcl_conversions/pcl_conversions.h"
 #include "small_gicp/pcl/pcl_registration.hpp"
@@ -132,18 +135,28 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
     std::bind(&SmallGicpRelocalizationNode::initialPoseCallback, this, std::placeholders::_1));
 
   // ---------------------
-  // Timer: Periodically attempt registration
-  // ---------------------
-  register_timer_ = this->create_wall_timer(
-    std::chrono::milliseconds(500),  // 2 Hz
-    std::bind(&SmallGicpRelocalizationNode::performRegistration, this));
-
-  // ---------------------
-  // Timer: Publish TF
+  // Timer: Publish TF at high frequency (20 Hz)
   // ---------------------
   transform_timer_ = this->create_wall_timer(
     std::chrono::milliseconds(50),  // 20 Hz
     std::bind(&SmallGicpRelocalizationNode::publishTransform, this));
+
+  // ---------------------
+  // An asynchronous matching thread continually performs registration using the latest point cloud.
+  // The thread can be set to run at a lower priority (platform‐specific implementation may be needed).
+  // ---------------------
+  matching_thread_ = std::thread(&SmallGicpRelocalizationNode::matchingLoop, this);
+}
+
+// ---------------------
+// Destructor: Join the matching thread gracefully.
+// ---------------------
+SmallGicpRelocalizationNode::~SmallGicpRelocalizationNode()
+{
+  matching_thread_running_ = false;
+  if (matching_thread_.joinable()) {
+    matching_thread_.join();
+  }
 }
 
 // --------------------------------------------------
@@ -201,8 +214,8 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
                               << odom_to_lidar_odom.rotation().eulerAngles(0, 1, 2).transpose());
       break;
     } catch (tf2::TransformException & ex) {
-      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s Retrying...", ex.what());
-      rclcpp::sleep_for(std::chrono::seconds(1));
+      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s. Retrying...", ex.what());
+      std::this_thread::sleep_for(std::chrono::seconds(1));
     }
   }
   pcl::transformPointCloud(*global_map_, *global_map_, odom_to_lidar_odom);
@@ -215,17 +228,26 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
   last_scan_time_ = msg->header.stamp;
-
-  pcl::fromROSMsg(*msg, *registered_scan_);
-
-  // Lock the mutex to safely access the accumulated_clouds_ buffer
+  // Update the latest registered scan
   {
     std::lock_guard<std::mutex> lock(cloud_mutex_);
-    // Add the latest scan to the accumulation buffer with timestamp
-    accumulated_clouds_.emplace_back(msg->header.stamp, registered_scan_);
+    // Update the content of the registered_scan_ with the new scan data
+    pcl::fromROSMsg(*msg, *registered_scan_);
   }
+}
 
-  // Note: The actual processing of accumulated clouds is handled in performRegistration()
+// --------------------------------------------------
+// Asynchronous matching loop running in a separate thread
+// --------------------------------------------------
+void SmallGicpRelocalizationNode::matchingLoop()
+{
+  // This loop continuously performs matching with the latest available scan.
+  // Optionally, set a low thread priority here using OS-specific APIs.
+  while (matching_thread_running_) {
+    performRegistration();
+    // Sleep shortly to yield CPU time; adjust the sleep duration as needed
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
 }
 
 // --------------------------------------------------
@@ -233,48 +255,23 @@ void SmallGicpRelocalizationNode::registeredPcdCallback(
 // --------------------------------------------------
 void SmallGicpRelocalizationNode::performRegistration()
 {
-  pcl::PointCloud<pcl::PointXYZ>::Ptr merged_scan(new pcl::PointCloud<pcl::PointXYZ>());
-
-  // Define accumulation window duration (e.g., 0.5 seconds)
-  rclcpp::Duration accumulation_window = rclcpp::Duration::from_seconds(0.5);
-
-  // Current time
-  rclcpp::Time current_time = this->now();
-
-  // Lock the mutex to safely access and modify the accumulated_clouds_ buffer
+  // Acquire the latest registered scan in a thread-safe manner.
+  pcl::PointCloud<pcl::PointXYZ>::Ptr latest_scan(new pcl::PointCloud<pcl::PointXYZ>());
   {
     std::lock_guard<std::mutex> lock(cloud_mutex_);
-    if (accumulated_clouds_.empty()) {
-      RCLCPP_WARN(this->get_logger(), "No accumulated point clouds available for registration.");
-      return;
-    }
-
-    // Iterate through the deque and collect point clouds within the accumulation window
-    while (!accumulated_clouds_.empty()) {
-      // Get the oldest point cloud in the buffer
-      auto & oldest = accumulated_clouds_.front();
-      rclcpp::Time cloud_time = oldest.first;
-
-      // Check if the point cloud is within the accumulation window
-      if ((current_time - cloud_time) <= accumulation_window) {
-        *merged_scan += *(oldest.second);
-        accumulated_clouds_.pop_front();
-      } else {
-        // Remove point clouds older than the accumulation window
-        accumulated_clouds_.pop_front();
-      }
-    }
+    // Make a copy of the current registered_scan_
+    *latest_scan = *registered_scan_;
   }
 
-  if (merged_scan->empty()) {
-    RCLCPP_WARN(this->get_logger(), "No point clouds within the accumulation window. Switching to latest point cloud.");
-    merged_scan = registered_scan_;
+  if (!latest_scan || latest_scan->empty()) {
+    RCLCPP_WARN(this->get_logger(), "No latest point cloud available for registration.");
+    return;
   }
 
-  // Downsample the merged scan and convert to PointCovariance
+  // Downsample the latest scan and convert it into PointCovariance
   source_ = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
-    *merged_scan, registered_leaf_size_);
+    *latest_scan, registered_leaf_size_);
 
   // Estimate point covariances
   small_gicp::estimate_covariances_omp(*source_, num_neighbors_, num_threads_);
