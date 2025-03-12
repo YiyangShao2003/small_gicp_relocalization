@@ -108,6 +108,15 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr prior_pcd_pub_;
   rclcpp::TimerBase::SharedPtr prior_pub_timer_;
 
+  // Initial guess
+  float initial_guess_x_;
+  float initial_guess_y_;
+
+  // Counter for registration
+  bool limited_registration_;
+  int registration_counter_{0};
+  int max_registration_;
+
   // Relocalization
   bool todo_first_relocalization_{false};
   bool enable_relocalization_;

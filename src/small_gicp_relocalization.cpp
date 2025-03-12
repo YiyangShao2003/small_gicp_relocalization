@@ -44,6 +44,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("base_frame", "");
   this->declare_parameter("lidar_frame", "");
   this->declare_parameter("prior_pcd_file", "");
+  this->declare_parameter("initial_guess_x", 0.0);
+  this->declare_parameter("initial_guess_y", 0.0);
   this->declare_parameter("enable_relocalization", true);
   this->declare_parameter("relocalization_x_range", 5.0);
   this->declare_parameter("relocalization_y_range", 5.0);
@@ -55,6 +57,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("filter_alpha", 0.5);
   this->declare_parameter("max_consecutive_failures", 3);  // Default to 3 consecutive failures
   this->declare_parameter("min_inliers_threshold", 1000);
+  this->declare_parameter("limited_registration", false);
+  this->declare_parameter("max_registration", 100);
 
   // Get parameters
   this->get_parameter("pub_prior_pcd", pub_prior_pcd_);
@@ -68,6 +72,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("base_frame", base_frame_);
   this->get_parameter("lidar_frame", lidar_frame_);
   this->get_parameter("prior_pcd_file", prior_pcd_file_);
+  this->get_parameter("initial_guess_x", initial_guess_x_);
+  this->get_parameter("initial_guess_y", initial_guess_y_);
   this->get_parameter("enable_relocalization", enable_relocalization_);
   this->get_parameter("relocalization_x_range", relocalization_x_range_);
   this->get_parameter("relocalization_y_range", relocalization_y_range_);
@@ -79,6 +85,8 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("filter_alpha", filter_alpha_);
   this->get_parameter("max_consecutive_failures", max_consecutive_failures_);  // Get failure threshold
   this->get_parameter("min_inliers_threshold", min_inliers_threshold_);
+  this->get_parameter("limited_registration", limited_registration_);
+  this->get_parameter("max_registration", max_registration_);
   
   // ---------------------
   // Initialize processing objects
@@ -133,6 +141,13 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   initial_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
     "initialpose", 10,
     std::bind(&SmallGicpRelocalizationNode::initialPoseCallback, this, std::placeholders::_1));
+
+  // ---------------------
+  // Update initial guess
+  // ---------------------
+  filtered_result_t_.translation().x() = initial_guess_x_;
+  filtered_result_t_.translation().y() = initial_guess_y_;
+  previous_result_t_ = filtered_result_t_;
 
   // ---------------------
   // Timer: Publish TF at high frequency (20 Hz)
@@ -244,6 +259,10 @@ void SmallGicpRelocalizationNode::matchingLoop()
   // This loop continuously performs matching with the latest available scan.
   // Optionally, set a low thread priority here using OS-specific APIs.
   while (matching_thread_running_) {
+    if (limited_registration_ && registration_counter_ >= max_registration_) {
+      RCLCPP_INFO(this->get_logger(), "Reached the maximum number of registrations.");
+      continue;
+    }
     performRegistration();
     // Sleep shortly to yield CPU time; adjust the sleep duration as needed
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -326,10 +345,7 @@ void SmallGicpRelocalizationNode::performRegistration()
     }
   }
 
-  if (!todo_first_relocalization_) {
-    performRelocalization();
-    todo_first_relocalization_ = true;
-  }
+  registration_counter_ ++;
 }
 
 // --------------------------------------------------
@@ -355,8 +371,8 @@ void SmallGicpRelocalizationNode::performRelocalization()
   double local_center_yaw = previous_result_t_.rotation().eulerAngles(0, 1, 2).z();
 
   // Global search center at map origin
-  double global_center_x = 0.0;
-  double global_center_y = 0.0;
+  double global_center_x = initial_guess_x_;
+  double global_center_y = initial_guess_y_;
   double global_center_yaw = 0.0;  // Assuming 0 rotation at the map origin
 
   // Calculate yaw sampling range and step in radians
