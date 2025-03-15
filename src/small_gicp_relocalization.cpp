@@ -242,6 +242,13 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
 void SmallGicpRelocalizationNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+  // Skip processing if max registrations reached
+  if (limited_registration_ && registration_counter_ >= max_registration_) {
+    // Only update timestamp for TF publishing
+    last_scan_time_ = msg->header.stamp;
+    return;
+  }
+  
   last_scan_time_ = msg->header.stamp;
   // Update the latest registered scan
   {
@@ -260,8 +267,9 @@ void SmallGicpRelocalizationNode::matchingLoop()
   // Optionally, set a low thread priority here using OS-specific APIs.
   while (matching_thread_running_) {
     if (limited_registration_ && registration_counter_ >= max_registration_) {
-      RCLCPP_INFO(this->get_logger(), "Reached the maximum number of registrations.");
-      continue;
+      RCLCPP_INFO(this->get_logger(), "Reached the maximum number of registrations. Exiting matching thread.");
+      // Exit the thread to release resources
+      return;
     }
     performRegistration();
     // Sleep shortly to yield CPU time; adjust the sleep duration as needed

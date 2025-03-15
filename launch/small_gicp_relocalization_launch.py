@@ -54,7 +54,7 @@ def generate_launch_description():
                 "relocalization_x_step": 1.0,
                 "relocalization_y_step": 1.0,
                 "relocalization_yaw_step_deg": 45.0,
-                "filter_alpha": 0.2,
+                "filter_alpha": 0.4,
                 "max_consecutive_failures": 3,
                 "min_inliers_threshold": 300,
                 "limited_registration": True,
